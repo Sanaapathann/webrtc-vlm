@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Phone Streamer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 20px; }
+    video { width: 100%; max-width: 400px; border: 2px solid #ccc; }
+    #status { margin-top: 10px; font-weight: bold; }
+    #status.error { color: #d32f2f; }
+    #status.success { color: #388e3c; }
+  </style>
+</head>
+<body>
+  <h2>Streaming Camera to Browser</h2>
+  <video id="localVideo" autoplay muted playsinline></video>
+  <div id="status">Initializing...</div>
+
+  <script>
+    const localVideo = document.getElementById('localVideo');
+    const statusEl = document.getElementById('status');
+    let peerConnection;
+
+    const SIGNALING_HOST = window.location.hostname;
+
+    async function startStreaming() {
+      try {
+        // 1. Acquire camera stream
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 320, height: 240 },
+          audio: false
+        });
+        console.log("📱 local stream tracks:", stream.getTracks());
+
+        console.log('📱 Got local stream tracks:', stream.getTracks());
+        localVideo.srcObject = stream;
+
+        // 2. Read offer ID from URL
+        const params = new URLSearchParams(window.location.search);
+        const offerID = params.get('id');
+        if (!offerID) throw new Error('Missing offer ID in URL');
+
+        // 3. Fetch offer SDP
+        const offerRes = await fetch(`/api/get-offer/${offerID}`);
+        if (!offerRes.ok) throw new Error(`Offer not found (${offerRes.status})`);
+        const offerDesc = await offerRes.json();
+        console.log('📱 Fetched offer:', offerDesc);
+
+        // 4. Create RTCPeerConnection with STUN+TURN
+        peerConnection = new RTCPeerConnection({
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            {
+              urls: 'turn:relay.metered.ca:443',
+              username: 'username',
+              credential: 'password'
+            }
+          ]
+        });
+        peerConnection.onicegatheringstatechange = () =>
+  console.log("📱 ICE gathering state:", peerConnection.iceGatheringState);
+peerConnection.oniceconnectionstatechange = () =>
+  console.log("📱 ICE connection state:", peerConnection.iceConnectionState);
+peerConnection.onconnectionstatechange = () =>
+  console.log("📱 Peer connection state:", peerConnection.connectionState);
+
+
+        // 5. Add tracks to PC
+        stream.getTracks().forEach(track => {
+          peerConnection.addTrack(track, stream);
+        });
+
+        // 6. Handle ICE candidates & send answer once gathering finishes
+        peerConnection.onicecandidate = async event => {
+          if (!event.candidate) {
+            statusEl.textContent = 'Sending answer...';
+            statusEl.className = '';
+            const res = await fetch(
+              `/api/save-answer/${offerID}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(peerConnection.localDescription)
+              }
+            );
+            console.log('📱 save-answer response:', res.status, await res.text());
+            statusEl.textContent = res.ok
+              ? 'Streaming live!' : 'Failed to send answer.';
+            statusEl.className = res.ok ? 'success' : 'error';
+          }
+        };
+
+        // 7. Monitor ICE connection state
+        peerConnection.oniceconnectionstatechange = () => {
+          console.log('📱 ICE state:', peerConnection.iceConnectionState);
+        };
+
+        // 8. Set remote offer, create & set local answer
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(offerDesc));
+        const answerDesc = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answerDesc);
+      }
+      catch (err) {
+        console.error('❌ Streaming error:', err);
+        statusEl.textContent = 'Error: ' + err.message;
+        statusEl.className = 'error';
+      }
+    }
+
+    startStreaming();
+  </script>
+</body>
+</html>

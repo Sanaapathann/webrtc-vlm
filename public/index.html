@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WebRTC VLM Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0 auto;
+      max-width: 1400px;
+      background: linear-gradient(45deg, #020106, #0A1629, #113652, #145A82, #107FB3, #00A6E8);
+      color: #fff;
+      line-height: 1.6;
+      min-height: 100vh;
+      overflow-y: hidden;
+    }
+
+    h1 {
+      text-align: center;
+      margin:auto;
+      color: #fff;
+      font-size: 6rem;
+      font-style: oblique;
+      font-family: 'Franklin Gothic Medium', 'Arial Narrow', Arial, sans-serif;
+    }
+
+    /* Toggle */
+    .mode-toggle {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      margin: 15px 0 25px;
+    }
+    .mode-toggle label {
+      cursor: pointer;
+      padding: 10px 20px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      transition: all 0.3s ease;
+    }
+    .mode-toggle label:hover {
+      background: rgba(0, 166, 232, 0.3);
+    }
+    .mode-toggle input[type="radio"] {
+      margin-right: 8px;
+    }
+
+    /* Main content layout */
+    .main-content {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 40px;
+      margin-top: 30px;
+    }
+
+    /* Video container */
+    #video-container {
+      position: relative;
+      max-width: 500px;
+      flex: 1;
+      min-width: 300px;
+      margin: 0;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      background-color: #00000000;
+    }
+
+    #remoteVideo {
+      width: 625px;
+      height: 468.75px;
+      border: 3px solid rgb(0, 0, 0)
+      border-radius: 12px;
+      background: #000;
+      display: block;
+      transition: all 0.3s ease;
+    }
+    #remoteVideo:hover {
+      border-color: rgba(0, 166, 232, 0.5);
+      transform: translateY(-5px);
+    }
+
+    #overlayCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    /* QR code container */
+    #qrcode {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 300px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 20px;
+      max-width: 500px;
+      flex: 1;
+      min-width: 300px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      border: 2px solid rgba(255, 255, 255, 0.1);
+    }
+
+    #qrcode p {
+      font-size: 1.2rem;
+      text-align: center;
+      margin: 0;
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 8px;
+    }
+
+    #status {
+      margin-top: 25px;
+      padding: 15px;
+      background: rgba(0, 0, 0, 0.4);
+      border-radius: 8px;
+      text-align: center;
+      font-weight: bold;
+      font-size: 1.1rem;
+      border-left: 4px solid #00A6E8;
+    }
+    #status.error { 
+      color: #ff5252; 
+      background: rgba(253, 236, 234, 0.1); 
+      border-left-color: #ff5252;
+    }
+    #status.success { 
+      color: #69f0ae; 
+      background: rgba(232, 245, 233, 0.1); 
+      border-left-color: #69f0ae;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 900px) {
+      .main-content {
+        flex-direction: column;
+        align-items: center;
+      }
+      
+      h1 {
+        font-size: 2.5rem;
+      }
+    }
+
+    /* Decorative elements */
+    .decoration {
+      position: absolute;
+      z-index: -1;
+      opacity: 0.1;
+    }
+    .circle-1 {
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      background: #00A6E8;
+      top: 10%;
+      left: 5%;
+      filter: blur(40px);
+    }
+    .circle-2 {
+      width: 200px;
+      height: 200px;
+      border-radius: 50%;
+      background: #107FB3;
+      bottom: 10%;
+      right: 5%;
+      filter: blur(30px);
+    }
+  </style>
+
+  <!-- QRCode library -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+
+  <!-- TFJS (WASM) + coco-ssd -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+  <script>
+    tf.setBackend('wasm').then(() => {
+      console.log("✅ TensorFlow backend set to WASM");
+    });
+  </script>
+
+  <!-- WASM inference -->
+  <script src="/wasm_infer.js"></script>
+</head>
+<body>
+  <!-- Decorative background elements -->
+  <div class="decoration circle-1"></div>
+  <div class="decoration circle-2"></div>
+
+  <h1>WebRTC VLM Demo</h1>
+
+  <!-- Toggle -->
+  <div class="mode-toggle">
+    <label>
+      <input type="radio" name="inferMode" value="wasm" checked />
+      WASM (browser)
+    </label>
+    <label>
+      <input type="radio" name="inferMode" value="server" />
+      Server (Python)
+    </label>
+  </div>
+
+  <!-- Main content area with side-by-side layout -->
+  <div class="main-content">
+    <!-- Video + overlay -->
+    <div id="video-container">
+      <video id="remoteVideo" autoplay playsinline></video>
+      <canvas id="overlayCanvas"></canvas>
+    </div>
+
+    <!-- QR code + status -->
+    <div>
+      <div id="qrcode"><p>Generating connection QR code...</p></div>
+      <div id="status">Initializing WebRTC connection...</div>
+    </div>
+  </div>
+
+  <!-- Main app logic -->
+  <script src="/app.js"></script>
+
+  <script>
+    // This is just to simulate the QR code generation for demonstration
+    // In your actual app, this would be handled by your existing logic
+    document.addEventListener('DOMContentLoaded', function() {
+      setTimeout(function() {
+        const statusEl = document.getElementById('status');
+        statusEl.textContent = 'Ready to connect. Please scan QR code.';
+        statusEl.classList.add('success');
+      }, 2000);
+    });
+  </script>
+</body>
+</html>
