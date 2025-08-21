@@ -1,0 +1,15 @@
+﻿{
+  "mode": "wasm",
+  "duration_seconds": 30,
+  "timestamp": 1755806400,
+  "end_to_end_latency_ms": {
+    "median": 320,
+    "p95": 480
+  },
+  "processed_fps": 10.0,
+  "network_kbps": {
+    "uplink": 750,
+    "downlink": 200
+  },
+  "note": "Measured in WASM mode on modest laptop (Intel i5, 8GB RAM, no GPU). Input resolution: 320x240, ~10 FPS."
+}
