@@ -131,44 +131,82 @@ async function initWebRTC() {
 
     // Handle incoming video stream
     peerConnection.ontrack = (evt) => {
-      console.log('🎥 ontrack event:', evt.streams);
-      if (evt.streams && evt.streams[0]) {
-        remoteVideo.srcObject = evt.streams[0];
-        remoteVideo.muted = true;
-        remoteVideo.play().catch(console.warn);
-        updateStatus('📺 Video stream received!', 'success');
-        resizeCanvas();
+  console.log('🎥 ontrack event:', evt.streams);
+  if (evt.streams && evt.streams[0]) {
+    const stream = evt.streams[0];
+    remoteVideo.srcObject = stream;
+    remoteVideo.muted = true;
+    remoteVideo.play().catch(console.warn);
+    updateStatus('📺 Video stream received!', 'success');
+    resizeCanvas();
 
-        // 👉 Run inference based on mode
-        if (inferenceMode === "wasm") {
-          console.log("⚡ Running WASM inference in browser");
-          if (typeof startWasmMode !== 'undefined' && !window._wasmStarted) {
-            window._wasmStarted = true;
-            startWasmMode({ remoteVideo, overlayCanvas, dataChannel }).then(handle => {
-              window.wasmHandle = handle;
-              // Run 30-second benchmark
-              handle.runBenchmark(30).then(metrics => {
-                console.log('WASM metrics:', metrics);
-
-                // 👉 Save final metrics to server
-                fetch('/api/save-metrics-final', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(metrics)
-                })
-                .then(r => r.ok ? console.log('✅ Final metrics saved') : console.error('❌ Save failed'))
-                .catch(err => console.error('❌ Network error saving metrics:', err));
-              });
+    if (inferenceMode === "wasm") {
+      console.log("⚡ Running WASM inference in browser");
+      if (typeof startWasmMode !== 'undefined' && !window._wasmStarted) {
+        window._wasmStarted = true;
+        startWasmMode({ remoteVideo, overlayCanvas, dataChannel }).then(handle => {
+          window.wasmHandle = handle;
+          handle.runBenchmark(30).then(metrics => {
+            fetch('/api/save-metrics-final', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(metrics)
             });
-          }
-        } else if (inferenceMode === "server") {
-          console.log("⚡ Using server-side inference (Python backend)");
-          updateStatus("⚡ Server-side inference active", "info");
-          // Detections will come via dataChannel from Python backend
-        }
+          });
+        });
       }
-    };
+    } else if (inferenceMode === "server") {
+      console.log("⚡ Sending frames to server for inference");
 
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.muted = true;
+      video.autoplay = true;
+
+      video.onloadedmetadata = () => {
+        canvas.width = 320;
+        canvas.height = 240;
+      };
+
+      const interval = setInterval(() => {
+        if (!video.videoWidth) return;
+
+        // Draw frame
+        ctx.drawImage(video, 0, 0, 320, 240);
+
+        // Convert to JPEG blob
+        canvas.toBlob(async (blob) => {
+          const formData = new FormData();
+          formData.append('file', blob, 'frame.jpg');
+          formData.append('frame_id', Date.now().toString());
+          formData.append('capture_ts', Date.now());
+
+          try {
+            const res = await fetch('/api/infer-ai', {
+              method: 'POST',
+              body: formData
+            });
+            const detection = await res.json();
+            if (detection.detections && dataChannel.readyState === 'open') {
+              dataChannel.send(JSON.stringify(detection));
+            }
+          } catch (err) {
+            console.error('Inference failed:', err);
+          }
+        }, 'image/jpeg', 0.7);
+      }, 100); // 10 FPS
+
+      // Stop on disconnect
+      peerConnection.oniceconnectionstatechange = () => {
+        if (peerConnection.iceConnectionState === 'closed') {
+          clearInterval(interval);
+        }
+      };
+    }
+  }
+};
     // Request video/audio
     peerConnection.addTransceiver('video', { direction: 'recvonly' });
     peerConnection.addTransceiver('audio', { direction: 'recvonly' });
@@ -192,7 +230,7 @@ async function initWebRTC() {
 // Use current host (works for ngrok and localhost)
 const host = window.location.host;
 const protocol = window.location.protocol;
-const url = `${protocol}//${host}/receive.html?id=${offerID}`;;
+const url = `${protocol}//${host}/receive.html?id=${offerID}`;
     generateQRCode(url);
     updateStatus('📱 Scan QR code with your phone', 'info');
 
@@ -206,6 +244,48 @@ const url = `${protocol}//${host}/receive.html?id=${offerID}`;;
     console.error('❌ initWebRTC error:', err);
     updateStatus('Error: ' + err.message, 'error');
   }
+}
+
+function startServerInference(stream, dataChannel) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const video = document.createElement('video');
+  video.srcObject = stream;
+  video.muted = true;
+  video.autoplay = true;
+
+  video.onloadedmetadata = () => {
+    canvas.width = 320;
+    canvas.height = 240;
+  };
+
+  const interval = setInterval(() => {
+    if (!video.videoWidth) return;
+
+    // Resize and draw frame
+    ctx.drawImage(video, 0, 0, 320, 240);
+    canvas.toBlob(async (blob) => {
+      const formData = new FormData();
+      formData.append('file', blob, 'frame.jpg');
+      formData.append('frame_id', Date.now().toString());
+      formData.append('capture_ts', Date.now());
+
+      try {
+        const res = await fetch('/api/infer-ai', {
+          method: 'POST',
+          body: formData
+        });
+        const detection = await res.json();
+        if (detection.detections) {
+          dataChannel.send(JSON.stringify(detection));
+        }
+      } catch (err) {
+        console.error('Inference failed:', err);
+      }
+    }, 'image/jpeg', 0.7);
+  }, 100); // 10 FPS
+
+  return () => clearInterval(interval);
 }
 
 // On page load

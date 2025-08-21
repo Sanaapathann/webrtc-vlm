@@ -52,7 +52,7 @@ localhost*
 *~
 
 # Generated metrics (optional — keep if you want to include sample)
-metrics.json
+
 
 # Optional: if you have Python cache
 __pycache__/

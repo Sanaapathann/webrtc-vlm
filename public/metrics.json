@@ -1,0 +1,11 @@
+{
+  "mode": "wasm",
+  "duration_sec": 30,
+  "median_latency_ms": 67,
+  "p95_latency_ms": 78,
+  "processed_fps": 8.17,
+  "uplink_kbps": 538.29,
+  "downlink_kbps": 0,
+  "resolution": "320x240",
+  "notes": "Latency = overlay_display_ts - capture_ts. Uplink = estimated from JPEG frames sent to server."
+}

@@ -1,13 +1,31 @@
-version: '3.8'
+
 
 services:
   web:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "3000:3000"
     volumes:
       - ./public:/app/public
+      - ./offers:/app/public/offers
+      - ./answers:/app/public/answers
+      - ./metrics:/app/public/metrics
     environment:
-      - MODE=${MODE:-wasm}
       - PORT=3000
+      - MODE=${MODE:-wasm}
+    depends_on:
+      - ai
+    restart: unless-stopped
+
+  ai:
+    build:
+      context: .
+      dockerfile: Dockerfile.ai
+    environment:
+      - PORT=8000
+      - YOLO_CONFIG_DIR=/tmp
+    expose:
+      - "8000"
     restart: unless-stopped
