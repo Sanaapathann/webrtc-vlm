@@ -37,6 +37,7 @@ Thumbs.db
 desktop.ini
 
 # Build outputs
+offers/
 public/offers/
 public/answers/
 public/metrics/
